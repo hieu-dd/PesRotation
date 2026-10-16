@@ -32,17 +32,17 @@ class TeamRotationTest {
     }
 
     @Test
-    fun roster_containsThirtyUniqueTeams() {
-        assertEquals(30, teams.size)
+    fun roster_containsThirtyFourUniqueTeams() {
+        assertEquals(34, teams.size)
         assertEquals(teams.size, teams.distinctBy(Team::id).size)
         assertEquals(teams.size, teams.distinctBy(Team::imageRes).size)
     }
 
     @Test
-    fun roster_containsTenTeamsInEachTier() {
-        Tier.entries.forEach { tier ->
-            assertEquals(10, teams.count { it.tier == tier })
-        }
+    fun roster_containsExpectedTeamCountInEachTier() {
+        assertEquals(10, teams.count { it.tier == Tier.TIER_1 })
+        assertEquals(12, teams.count { it.tier == Tier.TIER_2 })
+        assertEquals(12, teams.count { it.tier == Tier.TIER_3 })
     }
 
     @Test
@@ -51,6 +51,10 @@ class TeamRotationTest {
         assertEquals(Tier.TIER_3, teams.first { it.id == "napoli" }.tier)
         assertEquals(Tier.TIER_2, teams.first { it.id == "man-utd" }.tier)
         assertEquals(Tier.TIER_2, teams.first { it.id == "germany" }.tier)
+        assertEquals(Tier.TIER_2, teams.first { it.id == "fenerbahce" }.tier)
+        assertEquals(Tier.TIER_2, teams.first { it.id == "aston-villa" }.tier)
+        assertEquals(Tier.TIER_3, teams.first { it.id == "galatasaray" }.tier)
+        assertEquals(Tier.TIER_3, teams.first { it.id == "newcastle" }.tier)
     }
 
     @Test
@@ -234,6 +238,8 @@ class TeamRotationTest {
             "italy",
         )
         assertEquals(expectedEligibleTeamIds, teams.filter(::isVolumeDownEligible).map(Team::id).toSet())
+        assertTrue(teams.filter { it.id in setOf("fenerbahce", "aston-villa", "galatasaray", "newcastle") }
+            .none(::isVolumeDownEligible))
 
         val result = rotateVolumeDownTeams(teams, count = 4, random = Random(1))
 
