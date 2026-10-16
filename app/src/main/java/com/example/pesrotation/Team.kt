@@ -6,7 +6,7 @@ import kotlin.random.Random
 
 private const val MaxTier3Teams = 2
 private const val MinRequiredTeamsPerPrimaryTier = 2
-private const val MinBalancedPoolSize = 4
+private const val MinVolumeDownPoolSize = 4
 private const val MaxSelectionAttempts = 1_000
 
 data class TierWeights(
@@ -32,25 +32,29 @@ enum class Tier(val level: Int) {
     TIER_3(3),
 }
 
-enum class RotationPreset {
+enum class RotationTrick {
     NONE,
-    FEATURED_POOL,
-    BALANCED_POOL,
+    VOLUME_UP_POOL,
+    VOLUME_DOWN_POOL,
 }
 
-val FeaturedTeamIds = setOf(
+val VolumeUpTeamIds = setOf(
     "england",
     "arsenal",
-    "bayern-munich",
     "france",
     "real-madrid",
+    "spain",
     "brazil",
     "portugal",
+    "inter-milan",
     "man-utd",
     "germany",
+    "tottenham",
 )
 
-val BalancedExcludedTeamIds = setOf("dortmund", "ac-milan")
+val VolumeDownTier1ExcludedTeamIds = setOf("liverpool", "psg")
+val VolumeDownTier2ExcludedTeamIds = setOf("juventus", "ac-milan", "argentina", "dortmund")
+val VolumeDownTier3IncludedTeamIds = setOf("netherlands", "tottenham", "italy")
 
 data class Team(
     val id: String,
@@ -108,11 +112,14 @@ fun canChangeTeamTier(source: List<Team>, teamId: String, newTier: Tier): Boolea
     val hasEnoughPrimaryTeams = listOf(Tier.TIER_1, Tier.TIER_2).all { tier ->
         updatedTeams.count { it.tier == tier } >= MinRequiredTeamsPerPrimaryTier
     }
-    return hasEnoughPrimaryTeams && updatedTeams.count(::isBalancedEligible) >= MinBalancedPoolSize
+    return hasEnoughPrimaryTeams && updatedTeams.count(::isVolumeDownEligible) >= MinVolumeDownPoolSize
 }
 
-fun isBalancedEligible(team: Team): Boolean =
-    team.id !in BalancedExcludedTeamIds && team.tier != Tier.TIER_3
+fun isVolumeDownEligible(team: Team): Boolean = when (team.tier) {
+    Tier.TIER_1 -> team.id !in VolumeDownTier1ExcludedTeamIds
+    Tier.TIER_2 -> team.id !in VolumeDownTier2ExcludedTeamIds
+    Tier.TIER_3 -> team.id in VolumeDownTier3IncludedTeamIds
+}
 
 fun rotateTeams(
     source: List<Team>,
@@ -184,26 +191,25 @@ private fun fallbackRotation(source: List<Team>, requestedCount: Int, random: Ra
     return selected.take(requestedCount).shuffled(random)
 }
 
-private fun drawWithRequiredTier2(pool: List<Team>, count: Int, random: Random): List<Team> {
+fun rotateVolumeUpTeams(
+    source: List<Team>,
+    count: Int,
+    random: Random = Random.Default,
+): List<Team> {
+    val pool = source.filter { it.id in VolumeUpTeamIds }
     val requestedCount = count.coerceIn(0, pool.size)
     if (requestedCount == 0) return emptyList()
     val requiredTier2 = pool
         .filter { it.tier == Tier.TIER_2 }
         .shuffled(random)
         .firstOrNull()
-        ?: return pool.shuffled(random).take(requestedCount)
+        ?: return emptyList()
     val rest = pool.filter { it.id != requiredTier2.id }.shuffled(random).take(requestedCount - 1)
     return (listOf(requiredTier2) + rest).shuffled(random)
 }
 
-fun rotateFeaturedTeams(
+fun rotateVolumeDownTeams(
     source: List<Team>,
     count: Int,
     random: Random = Random.Default,
-): List<Team> = drawWithRequiredTier2(source.filter { it.id in FeaturedTeamIds }, count, random)
-
-fun rotateBalancedTeams(
-    source: List<Team>,
-    count: Int,
-    random: Random = Random.Default,
-): List<Team> = drawWithRequiredTier2(source.filter(::isBalancedEligible), count, random)
+): List<Team> = source.filter(::isVolumeDownEligible).shuffled(random).take(count.coerceAtLeast(0))

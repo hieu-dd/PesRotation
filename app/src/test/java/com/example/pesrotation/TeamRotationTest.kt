@@ -46,6 +46,14 @@ class TeamRotationTest {
     }
 
     @Test
+    fun roster_usesUpdatedDefaultTierAssignments() {
+        assertEquals(Tier.TIER_3, teams.first { it.id == "dortmund" }.tier)
+        assertEquals(Tier.TIER_3, teams.first { it.id == "napoli" }.tier)
+        assertEquals(Tier.TIER_2, teams.first { it.id == "man-utd" }.tier)
+        assertEquals(Tier.TIER_2, teams.first { it.id == "germany" }.tier)
+    }
+
+    @Test
     fun applyTierOverrides_changesOnlyConfiguredTeams() {
         val result = applyTierOverrides(
             source = teams,
@@ -166,80 +174,88 @@ class TeamRotationTest {
     }
 
     @Test
-    fun rotateFeaturedTeams_usesOnlyConfiguredTeams() {
+    fun rotateVolumeUpTeams_usesOnlyConfiguredTeams() {
+        assertEquals(
+            setOf(
+                "england",
+                "arsenal",
+                "france",
+                "real-madrid",
+                "spain",
+                "brazil",
+                "portugal",
+                "inter-milan",
+                "man-utd",
+                "germany",
+                "tottenham",
+            ),
+            VolumeUpTeamIds,
+        )
+
         (1..4).forEach { count ->
-            val result = rotateFeaturedTeams(teams, count, Random(count))
+            val result = rotateVolumeUpTeams(teams, count, Random(count))
 
             assertEquals(count, result.size)
-            assertTrue(result.all { it.id in FeaturedTeamIds })
+            assertTrue(result.all { it.id in VolumeUpTeamIds })
+            assertTrue(result.any { it.tier == Tier.TIER_2 })
             assertEquals(result.size, result.distinctBy(Team::id).size)
         }
     }
 
     @Test
-    fun rotateBalancedTeams_usesCurrentPrimaryTiersAndExclusions() {
-        val result = rotateBalancedTeams(teams, count = 4, random = Random(1))
+    fun rotateVolumeUpTeams_returnsEmptyWhenNoTier2TeamIsAvailable() {
+        val volumeUpPoolWithoutTier2 = teams
+            .filter { it.id in VolumeUpTeamIds }
+            .map { it.copy(tier = Tier.TIER_1) }
+
+        assertTrue(rotateVolumeUpTeams(volumeUpPoolWithoutTier2, count = 2, random = Random(1)).isEmpty())
+    }
+
+    @Test
+    fun rotateVolumeDownTeams_usesConfiguredTierRules() {
+        val expectedEligibleTeamIds = setOf(
+            "bayern-munich",
+            "man-city",
+            "barcelona",
+            "real-madrid",
+            "arsenal",
+            "france",
+            "england",
+            "spain",
+            "chelsea",
+            "atletico-madrid",
+            "inter-milan",
+            "brazil",
+            "portugal",
+            "man-utd",
+            "germany",
+            "tottenham",
+            "netherlands",
+            "italy",
+        )
+        assertEquals(expectedEligibleTeamIds, teams.filter(::isVolumeDownEligible).map(Team::id).toSet())
+
+        val result = rotateVolumeDownTeams(teams, count = 4, random = Random(1))
 
         assertEquals(4, result.size)
-        assertTrue(result.all(::isBalancedEligible))
-        assertTrue(result.none { it.id in BalancedExcludedTeamIds })
+        assertTrue(result.all(::isVolumeDownEligible))
+        assertTrue(result.all { it.id in expectedEligibleTeamIds })
         assertEquals(result.size, result.distinctBy(Team::id).size)
     }
 
     @Test
-    fun canChangeTeamTier_keepsAtLeastFourBalancedTeams() {
+    fun canChangeTeamTier_keepsAtLeastFourVolumeDownTeams() {
         val constrainedSource = listOf(
+            Team("psg", "PSG", "Test", Color.Black, Tier.TIER_1),
+            Team("liverpool", "Liverpool", "Test", Color.Black, Tier.TIER_1),
             Team("a", "A", "Test", Color.Black, Tier.TIER_1),
             Team("b", "B", "Test", Color.Black, Tier.TIER_1),
             Team("c", "C", "Test", Color.Black, Tier.TIER_2),
             Team("d", "D", "Test", Color.Black, Tier.TIER_2),
-            Team("dortmund", "Dortmund", "Test", Color.Black, Tier.TIER_1),
+            Team("dortmund", "Dortmund", "Test", Color.Black, Tier.TIER_2),
             Team("ac-milan", "AC Milan", "Test", Color.Black, Tier.TIER_2),
         )
 
         assertTrue(!canChangeTeamTier(constrainedSource, "a", Tier.TIER_3))
-    }
-
-    @Test
-    fun rotateFeaturedTeams_alwaysIncludesTier2WhenAvailable() {
-        (1..4).forEach { count ->
-            repeat(100) { seed ->
-                val result = rotateFeaturedTeams(teams, count, Random(seed))
-
-                assertEquals(count, result.size)
-                assertEquals(result.size, result.distinctBy(Team::id).size)
-                assertTrue(result.all { it.id in FeaturedTeamIds })
-                assertTrue(result.any { it.tier == Tier.TIER_2 })
-            }
-        }
-    }
-
-    @Test
-    fun rotateBalancedTeams_alwaysIncludesTier2WhenAvailable() {
-        (1..4).forEach { count ->
-            repeat(100) { seed ->
-                val result = rotateBalancedTeams(teams, count, Random(seed))
-
-                assertEquals(count, result.size)
-                assertEquals(result.size, result.distinctBy(Team::id).size)
-                assertTrue(result.all(::isBalancedEligible))
-                assertTrue(result.any { it.tier == Tier.TIER_2 })
-            }
-        }
-    }
-
-    @Test
-    fun rotateBalancedTeams_fallsBackWhenPoolHasNoTier2() {
-        val tier1OnlySource = listOf(
-            Team("a", "A", "Test", Color.Black, Tier.TIER_1),
-            Team("b", "B", "Test", Color.Black, Tier.TIER_1),
-            Team("c", "C", "Test", Color.Black, Tier.TIER_1),
-            Team("d", "D", "Test", Color.Black, Tier.TIER_1),
-        )
-
-        val result = rotateBalancedTeams(tier1OnlySource, count = 3, random = Random(1))
-
-        assertEquals(3, result.size)
-        assertEquals(result.size, result.distinctBy(Team::id).size)
     }
 }
