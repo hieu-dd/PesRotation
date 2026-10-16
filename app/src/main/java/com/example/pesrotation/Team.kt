@@ -25,7 +25,7 @@ data class TierWeights(
     }
 }
 
-val DefaultTierWeights = TierWeights(tier1 = 25, tier2 = 40, tier3 = 35)
+val DefaultTierWeights = TierWeights(tier1 = 30, tier2 = 40, tier3 = 30)
 
 enum class Tier(val level: Int) {
     TIER_1(1),
@@ -51,6 +51,7 @@ val VolumeUpTeamIds = setOf(
     "man-utd",
     "germany",
     "tottenham",
+    "netherlands"
 )
 
 val VolumeDownTier1ExcludedTeamIds = setOf("liverpool", "psg")
