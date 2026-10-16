@@ -53,7 +53,14 @@ val VolumeUpTeamIds = setOf(
 )
 
 val VolumeDownTier1ExcludedTeamIds = setOf("liverpool", "psg")
-val VolumeDownTier2ExcludedTeamIds = setOf("juventus", "ac-milan", "argentina", "dortmund")
+val VolumeDownTier2ExcludedTeamIds = setOf(
+    "juventus",
+    "ac-milan",
+    "argentina",
+    "dortmund",
+    "fenerbahce",
+    "aston-villa",
+)
 val VolumeDownTier3IncludedTeamIds = setOf("netherlands", "tottenham", "italy")
 
 data class Team(
@@ -70,10 +77,14 @@ val teams = listOf(
     Team("liverpool", "Liverpool", "CLB", Color(0xFFC8102E), Tier.TIER_1, R.drawable.team_liverpool),
     Team("dortmund", "Dortmund", "CLB", Color(0xFFFDE100), Tier.TIER_3, R.drawable.team_dortmund),
     Team("benfica", "Benfica", "CLB", Color(0xFFE30613), Tier.TIER_3, R.drawable.team_benfica),
+    Team("fenerbahce", "Fenerbahçe", "CLB", Color(0xFFFFD700), Tier.TIER_2, R.drawable.team_fenerbahce),
     Team("bayern-munich", "Bayern Munich", "CLB", Color(0xFF0066B2), Tier.TIER_1, R.drawable.team_bayern_munich),
     Team("man-city", "Man City", "CLB", Color(0xFF6CABDD), Tier.TIER_1, R.drawable.team_man_city),
     Team("man-utd", "Man Utd", "CLB", Color(0xFFDA291C), Tier.TIER_2, R.drawable.team_man_utd),
     Team("tottenham", "Tottenham", "CLB", Color(0xFF132257), Tier.TIER_3, R.drawable.team_tottenham),
+    Team("aston-villa", "Aston Villa", "CLB", Color(0xFF670E36), Tier.TIER_2, R.drawable.team_aston_villa),
+    Team("galatasaray", "Galatasaray", "CLB", Color(0xFFFFA500), Tier.TIER_3, R.drawable.team_galatasaray),
+    Team("newcastle", "Newcastle United", "CLB", Color(0xFF111111), Tier.TIER_3, R.drawable.team_newcastle),
     Team("ac-milan", "AC Milan", "CLB", Color(0xFFB21E29), Tier.TIER_2, R.drawable.team_ac_milan),
     Team("as-roma", "AS Roma", "CLB", Color(0xFF8E1F2F), Tier.TIER_3, R.drawable.team_as_roma),
     Team("chelsea", "Chelsea", "CLB", Color(0xFF034694), Tier.TIER_2, R.drawable.team_chelsea),
