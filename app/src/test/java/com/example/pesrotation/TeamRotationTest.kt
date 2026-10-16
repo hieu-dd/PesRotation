@@ -8,7 +8,8 @@ import org.junit.Test
 
 class TeamRotationTest {
     private val source = (1..6).map { index ->
-        Team(index.toString(), "Team $index", "Test", Color.Black, Tier.TIER_1)
+        val tier = if (index <= 4) Tier.TIER_1 else Tier.TIER_2
+        Team(index.toString(), "Team $index", "Test", Color.Black, tier)
     }
 
     @Test
@@ -29,6 +30,11 @@ class TeamRotationTest {
     @Test
     fun rotateTeams_returnsEmptyListForNegativeCount() {
         assertTrue(rotateTeams(source, count = -1).isEmpty())
+    }
+
+    @Test
+    fun rotateTeams_returnsEmptyWhenNoTier2TeamIsAvailable() {
+        assertTrue(rotateTeams(source.filter { it.tier != Tier.TIER_2 }, count = 3).isEmpty())
     }
 
     @Test
@@ -136,6 +142,7 @@ class TeamRotationTest {
 
             assertEquals(4, result.size)
             assertTrue(result.count { it.tier == Tier.TIER_3 } <= 2)
+            assertTrue(result.count { it.tier == Tier.TIER_2 } in 1..2)
             assertTrue(result.any { it.tier == Tier.TIER_2 })
         }
     }
@@ -162,6 +169,7 @@ class TeamRotationTest {
                 val result = rotateTeams(teams, count = count, random = Random(seed))
 
                 assertTrue(result.any { it.tier == Tier.TIER_2 })
+                assertTrue(result.count { it.tier == Tier.TIER_2 } <= 2)
             }
         }
     }
@@ -199,51 +207,96 @@ class TeamRotationTest {
         )
 
         assertEquals(4, result.size)
-        assertTrue(result.all { it.tier == Tier.TIER_2 })
+        assertEquals(2, result.count { it.tier == Tier.TIER_2 })
     }
 
     @Test
-    fun rotateTeams_restrictsFeaturedTierTeamsOnSeventyPercentBranch() {
-        val restrictedSeed = (0..10_000).first { Random(it).nextDouble() < 0.7 }
-        val fullPoolSeed = (0..10_000).first { Random(it).nextDouble() >= 0.7 }
+    fun rotateTeams_restrictsFeaturedTierTeamsOnSixtyPercentBranch() {
+        val restrictedSeed = (0..10_000).first { Random(it).nextDouble() < 0.6 }
+        val fullPoolSeed = (0..10_000).first { Random(it).nextDouble() >= 0.6 }
         val tier1FeaturedIds = Tier1ReducedPoolExcludedTeamIds
         val tier2FeaturedIds = Tier2ReducedPoolExcludedTeamIds
+        val requiredTier2 = Team("required-tier2", "Required Tier 2", "Test", Color.Black, Tier.TIER_2)
 
         val restrictedTier1Result = rotateTeams(
-            source = teams.filter { it.tier == Tier.TIER_1 },
-            count = 1,
+            source = teams.filter { it.id in tier1FeaturedIds || it.id == "psg" } + requiredTier2,
+            count = 2,
             random = Random(restrictedSeed),
             weights = TierWeights(100, 0, 0),
         )
-        assertEquals(1, restrictedTier1Result.size)
-        assertTrue(restrictedTier1Result.none { it.id in tier1FeaturedIds })
+        assertEquals(2, restrictedTier1Result.size)
+        assertEquals("psg", restrictedTier1Result.single { it.tier == Tier.TIER_1 }.id)
 
         val fullTier1Result = rotateTeams(
-            source = teams.filter { it.id in tier1FeaturedIds },
-            count = 1,
+            source = teams.filter { it.id in tier1FeaturedIds } + requiredTier2,
+            count = 2,
             random = Random(fullPoolSeed),
             weights = TierWeights(100, 0, 0),
         )
-        assertEquals(1, fullTier1Result.size)
-        assertTrue(fullTier1Result.single().id in tier1FeaturedIds)
+        assertEquals(2, fullTier1Result.size)
+        assertTrue(fullTier1Result.single { it.tier == Tier.TIER_1 }.id in tier1FeaturedIds)
 
+        val restrictedTier2Seed = (0..10_000).first { Random(it).nextDouble() < 0.6 }
+        val fullTier2Seed = (0..10_000).first { Random(it).nextDouble() >= 0.6 }
         val restrictedTier2Result = rotateTeams(
-            source = teams.filter { it.tier == Tier.TIER_2 },
+            source = teams.filter { it.id in tier2FeaturedIds },
             count = 1,
-            random = Random(restrictedSeed),
+            random = Random(restrictedTier2Seed),
             weights = TierWeights(0, 100, 0),
         )
-        assertEquals(1, restrictedTier2Result.size)
-        assertTrue(restrictedTier2Result.none { it.id in tier2FeaturedIds })
+        assertTrue(restrictedTier2Result.isEmpty())
 
         val fullTier2Result = rotateTeams(
             source = teams.filter { it.id in tier2FeaturedIds },
             count = 1,
-            random = Random(fullPoolSeed),
+            random = Random(fullTier2Seed),
             weights = TierWeights(0, 100, 0),
         )
         assertEquals(1, fullTier2Result.size)
         assertTrue(fullTier2Result.single().id in tier2FeaturedIds)
+    }
+
+    @Test
+    fun allRotationModesSelectOneOrTwoTier2Teams() {
+        (1..4).forEach { count ->
+            repeat(100) { seed ->
+                val random = Random(seed)
+                val results = listOf(
+                    rotateTeams(teams, count, random),
+                    rotateVolumeUpTeams(teams, count, random),
+                    rotateVolumeDownTeams(teams, count, random),
+                )
+
+                results.forEach { result ->
+                    assertEquals(count, result.size)
+                    assertTrue(result.count { it.tier == Tier.TIER_2 } in 1..2)
+                    assertEquals(result.size, result.distinctBy(Team::id).size)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun allRotationModesReturnEmptyWhenNoEnabledTier2TeamIsAvailable() {
+        val disabledTier2Ids = teams.filter { it.tier == Tier.TIER_2 }.map { it.id }.toSet()
+
+        assertTrue(rotateTeams(teams, count = 4, disabledTeamIds = disabledTier2Ids).isEmpty())
+        assertTrue(rotateVolumeUpTeams(teams, count = 4, disabledTeamIds = disabledTier2Ids).isEmpty())
+        assertTrue(rotateVolumeDownTeams(teams, count = 4, disabledTeamIds = disabledTier2Ids).isEmpty())
+    }
+
+    @Test
+    fun volumeTricks_useConfiguredWeightsAfterSelectingRequiredTier2() {
+        val tier1OnlyWeights = TierWeights(100, 0, 0)
+
+        listOf(
+            rotateVolumeUpTeams(teams, count = 4, weights = tier1OnlyWeights),
+            rotateVolumeDownTeams(teams, count = 4, weights = tier1OnlyWeights),
+        ).forEach { result ->
+            assertEquals(4, result.size)
+            assertEquals(1, result.count { it.tier == Tier.TIER_2 })
+            assertEquals(3, result.count { it.tier == Tier.TIER_1 })
+        }
     }
 
     @Test
@@ -322,6 +375,7 @@ class TeamRotationTest {
         assertEquals(4, result.size)
         assertTrue(result.all(::isVolumeDownEligible))
         assertTrue(result.all { it.id in expectedEligibleTeamIds })
+        assertTrue(result.count { it.tier == Tier.TIER_2 } in 1..2)
         assertEquals(result.size, result.distinctBy(Team::id).size)
     }
 

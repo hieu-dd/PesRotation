@@ -278,12 +278,14 @@ fun PesRotationScreen(
                 teamPool,
                 requestedCount,
                 disabledTeamIds = disabledTeamIds,
+                weights = tierWeights,
             )
 
             RotationTrick.VOLUME_DOWN_POOL -> rotateVolumeDownTeams(
                 teamPool,
                 requestedCount,
                 disabledTeamIds = disabledTeamIds,
+                weights = tierWeights,
             )
 
             RotationTrick.NONE -> rotateTeams(
@@ -294,11 +296,7 @@ fun PesRotationScreen(
             )
         }
         if (selected.isEmpty()) {
-            rotationNotice = if (activeTrick == RotationTrick.VOLUME_UP_POOL) {
-                "Pool Volume Up cần ít nhất một đội Tier 2 đang bật."
-            } else {
-                "Không còn đội đang bật trong pool này."
-            }
+            rotationNotice = "Cần ít nhất một đội Tier 2 đang bật trong pool quay này."
             return
         }
         rotationNotice = null

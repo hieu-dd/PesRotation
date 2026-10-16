@@ -5,9 +5,9 @@ import androidx.compose.ui.graphics.Color
 import kotlin.random.Random
 
 private const val MaxTier3Teams = 2
+private const val MaxTier2Teams = 2
 private const val MinRequiredTeamsPerPrimaryTier = 2
 private const val MinVolumeDownPoolSize = 4
-private const val MaxSelectionAttempts = 1_000
 private const val ReducedTierPoolProbability = 0.6
 
 data class TierWeights(
@@ -25,7 +25,7 @@ data class TierWeights(
     }
 }
 
-val DefaultTierWeights = TierWeights(tier1 = 30, tier2 = 40, tier3 = 30)
+val DefaultTierWeights = TierWeights(tier1 = 25, tier2 = 40, tier3 = 35)
 
 enum class Tier(val level: Int) {
     TIER_1(1),
@@ -150,8 +150,6 @@ fun rotateTeams(
     weights: TierWeights = DefaultTierWeights,
     disabledTeamIds: Set<String> = emptySet(),
 ): List<Team> {
-    if (count <= 0) return emptyList()
-
     val teamsByTier = Tier.entries.associateWith { tier ->
         val tierTeams = source.filter { it.tier == tier && it.id !in disabledTeamIds }
         val excludedTeamIds = when (tier) {
@@ -168,33 +166,13 @@ fun rotateTeams(
             tierTeams
         }
     }
-    val tier3Slots = teamsByTier.getValue(Tier.TIER_3).size.coerceAtMost(MaxTier3Teams)
-    val availableCount = teamsByTier.getValue(Tier.TIER_1).size +
-        teamsByTier.getValue(Tier.TIER_2).size + tier3Slots
-    val requestedCount = count.coerceIn(0, availableCount)
-    if (requestedCount == 0) return emptyList()
-    if (teamsByTier.values.count { it.isNotEmpty() } == 1) {
-        return teamsByTier.values.flatten().shuffled(random).take(requestedCount)
-    }
-
-    repeat(MaxSelectionAttempts) {
-        val selectedTiers = List(requestedCount) { randomTier(random, weights) }
-        val tierCounts = selectedTiers.groupingBy { it }.eachCount()
-        val hasRequiredTier2 = teamsByTier.getValue(Tier.TIER_2).isEmpty() ||
-            tierCounts.getOrDefault(Tier.TIER_2, 0) > 0
-        val hasValidTier3Count = tierCounts.getOrDefault(Tier.TIER_3, 0) <= MaxTier3Teams
-        val hasEnoughTeams = tierCounts.all { (tier, tierCount) ->
-            teamsByTier.getValue(tier).size >= tierCount
-        }
-
-        if (hasRequiredTier2 && hasValidTier3Count && hasEnoughTeams) {
-            return tierCounts.flatMap { (tier, tierCount) ->
-                teamsByTier.getValue(tier).shuffled(random).take(tierCount)
-            }.shuffled(random)
-        }
-    }
-
-    return fallbackRotation(teamsByTier, requestedCount, random)
+    return rotateFromTierPools(
+        pools = teamsByTier,
+        count = count,
+        random = random,
+        weights = weights,
+        maxTier3Teams = MaxTier3Teams,
+    )
 }
 
 fun randomTier(
@@ -210,55 +188,99 @@ fun randomTier(
     }
 }
 
-private fun fallbackRotation(
-    teamsByTier: Map<Tier, List<Team>>,
-    requestedCount: Int,
-    random: Random,
-): List<Team> {
-    val selected = mutableListOf<Team>()
-    teamsByTier.getValue(Tier.TIER_2)
-        .shuffled(random)
-        .firstOrNull()
-        ?.let(selected::add)
-    if (selected.size == requestedCount) return selected
-
-    var tier3Count = 0
-
-    for (team in teamsByTier.values.flatten().shuffled(random)) {
-        if (team in selected) continue
-        if (team.tier == Tier.TIER_3 && tier3Count == MaxTier3Teams) continue
-        selected += team
-        if (team.tier == Tier.TIER_3) tier3Count++
-        if (selected.size == requestedCount) break
-    }
-
-    return selected.take(requestedCount).shuffled(random)
-}
-
 fun rotateVolumeUpTeams(
     source: List<Team>,
     count: Int,
     random: Random = Random.Default,
     disabledTeamIds: Set<String> = emptySet(),
-): List<Team> {
-    val pool = source.filter { it.id !in disabledTeamIds && it.id in VolumeUpTeamIds }
-    val requestedCount = count.coerceIn(0, pool.size)
-    if (requestedCount == 0) return emptyList()
-    val requiredTier2 = pool
-        .filter { it.tier == Tier.TIER_2 }
-        .shuffled(random)
-        .firstOrNull()
-        ?: return emptyList()
-    val rest = pool.filter { it.id != requiredTier2.id }.shuffled(random).take(requestedCount - 1)
-    return (listOf(requiredTier2) + rest).shuffled(random)
-}
+    weights: TierWeights = DefaultTierWeights,
+): List<Team> = rotateFromTierPools(
+    pools = Tier.entries.associateWith { tier ->
+        source.filter { it.tier == tier && it.id !in disabledTeamIds && it.id in VolumeUpTeamIds }
+    },
+    count = count,
+    random = random,
+    weights = weights,
+)
 
 fun rotateVolumeDownTeams(
     source: List<Team>,
     count: Int,
     random: Random = Random.Default,
     disabledTeamIds: Set<String> = emptySet(),
-): List<Team> = source
-    .filter { it.id !in disabledTeamIds && isVolumeDownEligible(it) }
-    .shuffled(random)
-    .take(count.coerceAtLeast(0))
+    weights: TierWeights = DefaultTierWeights,
+): List<Team> = rotateFromTierPools(
+    pools = Tier.entries.associateWith { tier ->
+        source.filter {
+            it.tier == tier && it.id !in disabledTeamIds && isVolumeDownEligible(it)
+        }
+    },
+    count = count,
+    random = random,
+    weights = weights,
+)
+
+private fun rotateFromTierPools(
+    pools: Map<Tier, List<Team>>,
+    count: Int,
+    random: Random,
+    weights: TierWeights,
+    maxTier3Teams: Int? = null,
+): List<Team> {
+    if (count <= 0) return emptyList()
+
+    val tier2Pool = pools.getValue(Tier.TIER_2)
+    if (tier2Pool.isEmpty()) return emptyList()
+
+    val availableCount = pools.entries.sumOf { (tier, tierTeams) ->
+        when (tier) {
+            Tier.TIER_1 -> tierTeams.size
+            Tier.TIER_2 -> tierTeams.size.coerceAtMost(MaxTier2Teams)
+            Tier.TIER_3 -> maxTier3Teams?.let(tierTeams.size::coerceAtMost) ?: tierTeams.size
+        }
+    }
+    val requestedCount = count.coerceAtMost(availableCount)
+    if (requestedCount == 0) return emptyList()
+
+    val selected = mutableListOf(tier2Pool.random(random))
+    while (selected.size < requestedCount) {
+        val selectedIds = selected.mapTo(mutableSetOf(), Team::id)
+        val selectedTier2Count = selected.count { it.tier == Tier.TIER_2 }
+        val selectedTier3Count = selected.count { it.tier == Tier.TIER_3 }
+        val remainingByTier = Tier.entries.associateWith { tier ->
+            val tierLimitReached = when (tier) {
+                Tier.TIER_1 -> false
+                Tier.TIER_2 -> selectedTier2Count >= MaxTier2Teams
+                Tier.TIER_3 -> maxTier3Teams?.let { selectedTier3Count >= it } ?: false
+            }
+            if (tierLimitReached) {
+                emptyList()
+            } else {
+                pools.getValue(tier).filter { it.id !in selectedIds }
+            }
+        }.filterValues { it.isNotEmpty() }
+
+        if (remainingByTier.isEmpty()) break
+
+        val tier = weightedTier(remainingByTier.keys, weights, random)
+        selected += remainingByTier.getValue(tier).random(random)
+    }
+
+    return selected.shuffled(random)
+}
+
+private fun weightedTier(availableTiers: Set<Tier>, weights: TierWeights, random: Random): Tier {
+    val validWeights = weights.takeIf { it.isValid } ?: DefaultTierWeights
+    val totalWeight = availableTiers.sumOf(validWeights::get)
+    if (totalWeight == 0) return availableTiers.random(random)
+
+    var roll = random.nextInt(totalWeight)
+    for (tier in Tier.entries) {
+        if (tier !in availableTiers) continue
+        val tierWeight = validWeights[tier]
+        if (roll < tierWeight) return tier
+        roll -= tierWeight
+    }
+
+    return availableTiers.first()
+}
