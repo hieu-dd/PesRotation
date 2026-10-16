@@ -171,6 +171,50 @@ class TeamRotationTest {
     }
 
     @Test
+    fun rotateTeams_restrictsFeaturedTierTeamsOnSeventyPercentBranch() {
+        val restrictedSeed = (0..10_000).first { Random(it).nextDouble() < 0.7 }
+        val fullPoolSeed = (0..10_000).first { Random(it).nextDouble() >= 0.7 }
+        val tier1FeaturedIds = Tier1ReducedPoolExcludedTeamIds
+        val tier2FeaturedIds = Tier2ReducedPoolExcludedTeamIds
+
+        val restrictedTier1Result = rotateTeams(
+            source = teams.filter { it.tier == Tier.TIER_1 },
+            count = 1,
+            random = Random(restrictedSeed),
+            weights = TierWeights(100, 0, 0),
+        )
+        assertEquals(1, restrictedTier1Result.size)
+        assertTrue(restrictedTier1Result.none { it.id in tier1FeaturedIds })
+
+        val fullTier1Result = rotateTeams(
+            source = teams.filter { it.id in tier1FeaturedIds },
+            count = 1,
+            random = Random(fullPoolSeed),
+            weights = TierWeights(100, 0, 0),
+        )
+        assertEquals(1, fullTier1Result.size)
+        assertTrue(fullTier1Result.single().id in tier1FeaturedIds)
+
+        val restrictedTier2Result = rotateTeams(
+            source = teams.filter { it.tier == Tier.TIER_2 },
+            count = 1,
+            random = Random(restrictedSeed),
+            weights = TierWeights(0, 100, 0),
+        )
+        assertEquals(1, restrictedTier2Result.size)
+        assertTrue(restrictedTier2Result.none { it.id in tier2FeaturedIds })
+
+        val fullTier2Result = rotateTeams(
+            source = teams.filter { it.id in tier2FeaturedIds },
+            count = 1,
+            random = Random(fullPoolSeed),
+            weights = TierWeights(0, 100, 0),
+        )
+        assertEquals(1, fullTier2Result.size)
+        assertTrue(fullTier2Result.single().id in tier2FeaturedIds)
+    }
+
+    @Test
     fun tierWeights_requireNonNegativeValuesAndTotalOfOneHundred() {
         assertTrue(TierWeights(30, 40, 30).isValid)
         assertTrue(!TierWeights(30, 40, 29).isValid)
