@@ -32,6 +32,38 @@ class TeamRotationTest {
     }
 
     @Test
+    fun rotationModes_neverReturnDisabledTeams() {
+        val disabledTeamIds = setOf("arsenal", "brazil", "netherlands")
+
+        val regularResult = rotateTeams(
+            source = teams,
+            count = 4,
+            random = Random(1),
+            disabledTeamIds = disabledTeamIds,
+        )
+        assertTrue(regularResult.none { it.id in disabledTeamIds })
+
+        assertTrue(
+            rotateVolumeUpTeams(
+                source = teams,
+                count = 4,
+                random = Random(1),
+                disabledTeamIds = VolumeUpTeamIds,
+            ).isEmpty(),
+        )
+
+        val volumeDownTeamIds = teams.filter(::isVolumeDownEligible).map { it.id }.toSet()
+        assertTrue(
+            rotateVolumeDownTeams(
+                source = teams,
+                count = 4,
+                random = Random(1),
+                disabledTeamIds = volumeDownTeamIds,
+            ).isEmpty(),
+        )
+    }
+
+    @Test
     fun roster_containsThirtyFourUniqueTeams() {
         assertEquals(34, teams.size)
         assertEquals(teams.size, teams.distinctBy(Team::id).size)
@@ -300,12 +332,14 @@ class TeamRotationTest {
             Team("liverpool", "Liverpool", "Test", Color.Black, Tier.TIER_1),
             Team("a", "A", "Test", Color.Black, Tier.TIER_1),
             Team("b", "B", "Test", Color.Black, Tier.TIER_1),
+            Team("e", "E", "Test", Color.Black, Tier.TIER_1),
             Team("c", "C", "Test", Color.Black, Tier.TIER_2),
             Team("d", "D", "Test", Color.Black, Tier.TIER_2),
             Team("dortmund", "Dortmund", "Test", Color.Black, Tier.TIER_2),
             Team("ac-milan", "AC Milan", "Test", Color.Black, Tier.TIER_2),
         )
 
-        assertTrue(!canChangeTeamTier(constrainedSource, "a", Tier.TIER_3))
+        assertTrue(canChangeTeamTier(constrainedSource, "a", Tier.TIER_3))
+        assertTrue(!canChangeTeamTier(constrainedSource, "a", Tier.TIER_3, disabledTeamIds = setOf("b")))
     }
 }

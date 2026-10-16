@@ -34,6 +34,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -69,8 +71,10 @@ import com.example.pesrotation.ui.theme.Tier3Color
 @Composable
 fun SettingsScreen(
     teams: List<Team>,
+    disabledTeamIds: Set<String>,
     onBack: () -> Unit,
     onTierChange: (String, Tier) -> Unit,
+    onTeamEnabledChange: (String, Boolean) -> Unit,
     weights: TierWeights,
     onWeightsChange: (TierWeights) -> Unit,
     onReset: () -> Unit,
@@ -109,7 +113,7 @@ fun SettingsScreen(
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
             )
             Text(
-                text = "Tier 1 và Tier 2 luôn cần tối thiểu 2 đội",
+                text = "Tắt đội để loại khỏi mọi kiểu random. Tier 1 và Tier 2 cần tối thiểu 2 đội.",
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
                 color = BroadcastTextMuted,
                 fontSize = 12.sp,
@@ -127,8 +131,12 @@ fun SettingsScreen(
                     items(tierTeams, key = { it.id }) { team ->
                         TeamTierItem(
                             team = team,
-                            canSelectTier = { selectedTier -> canChangeTeamTier(teams, team.id, selectedTier) },
+                            isEnabled = team.id !in disabledTeamIds,
+                            canSelectTier = { selectedTier ->
+                                canChangeTeamTier(teams, team.id, selectedTier, disabledTeamIds)
+                            },
                             onTierChange = { selectedTier -> onTierChange(team.id, selectedTier) },
+                            onEnabledChange = { enabled -> onTeamEnabledChange(team.id, enabled) },
                         )
                     }
                     item(key = "space-${tier.name}") { Spacer(Modifier.height(8.dp)) }
@@ -143,8 +151,8 @@ fun SettingsScreen(
             containerColor = BroadcastSurfaceHigh,
             titleContentColor = BroadcastText,
             textContentColor = BroadcastTextMuted,
-            title = { Text("Khôi phục tier mặc định?") },
-            text = { Text("Tất cả thay đổi tier và tỉ lệ random đã lưu sẽ bị xóa.") },
+            title = { Text("Khôi phục cài đặt mặc định?") },
+            text = { Text("Thay đổi tier, tỉ lệ random và trạng thái bật/tắt đội sẽ được xóa.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -361,8 +369,10 @@ private fun TierSectionHeader(tier: Tier, count: Int) {
 @Composable
 private fun TeamTierItem(
     team: Team,
+    isEnabled: Boolean,
     canSelectTier: (Tier) -> Boolean,
     onTierChange: (Tier) -> Unit,
+    onEnabledChange: (Boolean) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -370,38 +380,68 @@ private fun TeamTierItem(
         colors = CardDefaults.cardColors(containerColor = BroadcastSurface),
         border = BorderStroke(1.dp, BroadcastLine),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(10.dp),
         ) {
-            TeamLogo(team = team, size = 50.dp)
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 10.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(team.name, color = BroadcastText, fontWeight = FontWeight.Black, maxLines = 1)
-                Text(team.category.uppercase(), color = BroadcastTextMuted, fontSize = 9.sp, letterSpacing = 0.8.sp)
+                TeamLogo(
+                    team = team,
+                    size = 48.dp,
+                    modifier = Modifier.alpha(if (isEnabled) 1f else 0.4f),
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 10.dp),
+                ) {
+                    Text(
+                        team.name,
+                        color = if (isEnabled) BroadcastText else BroadcastTextMuted,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                    )
+                    Text(
+                        "${team.category.uppercase()} · ${if (isEnabled) "ĐANG BẬT" else "ĐÃ TẮT"}",
+                        color = BroadcastTextMuted,
+                        fontSize = 9.sp,
+                        letterSpacing = 0.5.sp,
+                    )
+                }
+                Switch(
+                    checked = isEnabled,
+                    onCheckedChange = onEnabledChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = BroadcastBackground,
+                        checkedTrackColor = BroadcastLime,
+                        uncheckedThumbColor = BroadcastTextMuted,
+                        uncheckedTrackColor = BroadcastSurfaceHigh,
+                    ),
+                )
             }
             Row(
-                modifier = Modifier.width(156.dp),
+                modifier = Modifier
+                    .padding(start = 58.dp, top = 6.dp)
+                    .width(156.dp),
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 Tier.entries.forEach { tier ->
                     val color = tierColor(tier)
                     val selected = team.tier == tier
-                    val enabled = canSelectTier(tier)
+                    val canSelect = canSelectTier(tier)
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .height(40.dp)
-                            .alpha(if (enabled) 1f else 0.35f)
+                            .alpha(if (canSelect) 1f else 0.35f)
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (selected) color else BroadcastSurfaceHigh)
                             .border(1.dp, if (selected) color else BroadcastLine, RoundedCornerShape(12.dp))
-                            .clickable(enabled = enabled) { onTierChange(tier) },
+                            .clickable(enabled = canSelect) { onTierChange(tier) },
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -429,8 +469,10 @@ private fun SettingsScreenPreview() {
     PesRotationTheme {
         SettingsScreen(
             teams = teams,
+            disabledTeamIds = emptySet(),
             onBack = {},
             onTierChange = { _, _ -> },
+            onTeamEnabledChange = { _, _ -> },
             weights = DefaultTierWeights,
             onWeightsChange = {},
             onReset = {},

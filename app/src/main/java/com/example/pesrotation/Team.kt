@@ -119,14 +119,22 @@ fun groupTeamsByTier(source: List<Team>): Map<Tier, List<Team>> = Tier.entries.a
     source.filter { it.tier == tier }.sortedBy { it.name.lowercase() }
 }
 
-fun canChangeTeamTier(source: List<Team>, teamId: String, newTier: Tier): Boolean {
+fun canChangeTeamTier(
+    source: List<Team>,
+    teamId: String,
+    newTier: Tier,
+    disabledTeamIds: Set<String> = emptySet(),
+): Boolean {
     val team = source.find { it.id == teamId } ?: return false
     if (team.tier == newTier) return true
     val updatedTeams = source.map { if (it.id == teamId) it.copy(tier = newTier) else it }
     val hasEnoughPrimaryTeams = listOf(Tier.TIER_1, Tier.TIER_2).all { tier ->
         updatedTeams.count { it.tier == tier } >= MinRequiredTeamsPerPrimaryTier
     }
-    return hasEnoughPrimaryTeams && updatedTeams.count(::isVolumeDownEligible) >= MinVolumeDownPoolSize
+    val enabledVolumeDownCount = updatedTeams.count { team ->
+        team.id !in disabledTeamIds && isVolumeDownEligible(team)
+    }
+    return hasEnoughPrimaryTeams && enabledVolumeDownCount >= MinVolumeDownPoolSize
 }
 
 fun isVolumeDownEligible(team: Team): Boolean = when (team.tier) {
@@ -140,11 +148,12 @@ fun rotateTeams(
     count: Int,
     random: Random = Random.Default,
     weights: TierWeights = DefaultTierWeights,
+    disabledTeamIds: Set<String> = emptySet(),
 ): List<Team> {
     if (count <= 0) return emptyList()
 
     val teamsByTier = Tier.entries.associateWith { tier ->
-        val tierTeams = source.filter { it.tier == tier }
+        val tierTeams = source.filter { it.tier == tier && it.id !in disabledTeamIds }
         val excludedTeamIds = when (tier) {
             Tier.TIER_1 -> Tier1ReducedPoolExcludedTeamIds
             Tier.TIER_2 -> Tier2ReducedPoolExcludedTeamIds
@@ -230,8 +239,9 @@ fun rotateVolumeUpTeams(
     source: List<Team>,
     count: Int,
     random: Random = Random.Default,
+    disabledTeamIds: Set<String> = emptySet(),
 ): List<Team> {
-    val pool = source.filter { it.id in VolumeUpTeamIds }
+    val pool = source.filter { it.id !in disabledTeamIds && it.id in VolumeUpTeamIds }
     val requestedCount = count.coerceIn(0, pool.size)
     if (requestedCount == 0) return emptyList()
     val requiredTier2 = pool
@@ -247,4 +257,8 @@ fun rotateVolumeDownTeams(
     source: List<Team>,
     count: Int,
     random: Random = Random.Default,
-): List<Team> = source.filter(::isVolumeDownEligible).shuffled(random).take(count.coerceAtLeast(0))
+    disabledTeamIds: Set<String> = emptySet(),
+): List<Team> = source
+    .filter { it.id !in disabledTeamIds && isVolumeDownEligible(it) }
+    .shuffled(random)
+    .take(count.coerceAtLeast(0))

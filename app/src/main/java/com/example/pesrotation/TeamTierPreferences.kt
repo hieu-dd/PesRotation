@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -15,6 +16,7 @@ private val Context.teamTierDataStore by preferencesDataStore(name = "team_tiers
 private val Tier1WeightKey = intPreferencesKey("tier_1_weight")
 private val Tier2WeightKey = intPreferencesKey("tier_2_weight")
 private val Tier3WeightKey = intPreferencesKey("tier_3_weight")
+private val DisabledTeamIdsKey = stringSetPreferencesKey("disabled_team_ids")
 
 class TeamTierPreferences(private val context: Context) {
     val overrides: Flow<Map<String, Tier>> = context.teamTierDataStore.data
@@ -41,6 +43,12 @@ class TeamTierPreferences(private val context: Context) {
             ).takeIf { it.isValid } ?: DefaultTierWeights
         }
 
+    val disabledTeamIds: Flow<Set<String>> = context.teamTierDataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .map { preferences -> preferences[DisabledTeamIdsKey].orEmpty() }
+
     suspend fun setTier(teamId: String, tier: Tier) {
         context.teamTierDataStore.edit { preferences ->
             val defaultTier = teams.find { it.id == teamId }?.tier
@@ -55,6 +63,23 @@ class TeamTierPreferences(private val context: Context) {
             preferences[Tier1WeightKey] = weights.tier1
             preferences[Tier2WeightKey] = weights.tier2
             preferences[Tier3WeightKey] = weights.tier3
+        }
+    }
+
+    suspend fun setTeamEnabled(teamId: String, enabled: Boolean) {
+        if (teams.none { it.id == teamId }) return
+        context.teamTierDataStore.edit { preferences ->
+            val disabledTeamIds = preferences[DisabledTeamIdsKey].orEmpty().toMutableSet()
+            if (enabled) {
+                disabledTeamIds.remove(teamId)
+            } else {
+                disabledTeamIds.add(teamId)
+            }
+            if (disabledTeamIds.isEmpty()) {
+                preferences.remove(DisabledTeamIdsKey)
+            } else {
+                preferences[DisabledTeamIdsKey] = disabledTeamIds
+            }
         }
     }
 
