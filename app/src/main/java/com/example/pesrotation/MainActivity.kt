@@ -296,7 +296,7 @@ fun PesRotationScreen(
             )
         }
         if (selected.isEmpty()) {
-            rotationNotice = "Cần ít nhất một đội Tier 2 đang bật trong pool quay này."
+            rotationNotice = "Không đủ đội hợp lệ trong pool quay này."
             return
         }
         rotationNotice = null

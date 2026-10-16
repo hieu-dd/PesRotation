@@ -65,6 +65,7 @@ val VolumeDownTier2ExcludedTeamIds = setOf(
 val VolumeDownTier3IncludedTeamIds = setOf("netherlands", "tottenham", "italy")
 val Tier1ReducedPoolExcludedTeamIds = setOf("england", "france", "arsenal", "real-madrid")
 val Tier2ReducedPoolExcludedTeamIds = setOf("germany", "brazil")
+val Tier3ReducedPoolExcludedTeamIds = setOf("tottenham", "netherlands")
 
 data class Team(
     val id: String,
@@ -151,20 +152,7 @@ fun rotateTeams(
     disabledTeamIds: Set<String> = emptySet(),
 ): List<Team> {
     val teamsByTier = Tier.entries.associateWith { tier ->
-        val tierTeams = source.filter { it.tier == tier && it.id !in disabledTeamIds }
-        val excludedTeamIds = when (tier) {
-            Tier.TIER_1 -> Tier1ReducedPoolExcludedTeamIds
-            Tier.TIER_2 -> Tier2ReducedPoolExcludedTeamIds
-            Tier.TIER_3 -> emptySet()
-        }
-        if (
-            tierTeams.isNotEmpty() && excludedTeamIds.isNotEmpty() &&
-            random.nextDouble() < ReducedTierPoolProbability
-        ) {
-            tierTeams.filterNot { it.id in excludedTeamIds }
-        } else {
-            tierTeams
-        }
+        source.filter { it.tier == tier && it.id !in disabledTeamIds }
     }
     return rotateFromTierPools(
         pools = teamsByTier,
@@ -172,6 +160,11 @@ fun rotateTeams(
         random = random,
         weights = weights,
         maxTier3Teams = MaxTier3Teams,
+        reducedPoolExcludedTeamIds = mapOf(
+            Tier.TIER_1 to Tier1ReducedPoolExcludedTeamIds,
+            Tier.TIER_2 to Tier2ReducedPoolExcludedTeamIds,
+            Tier.TIER_3 to Tier3ReducedPoolExcludedTeamIds,
+        ),
     )
 }
 
@@ -226,6 +219,7 @@ private fun rotateFromTierPools(
     random: Random,
     weights: TierWeights,
     maxTier3Teams: Int? = null,
+    reducedPoolExcludedTeamIds: Map<Tier, Set<String>> = emptyMap(),
 ): List<Team> {
     if (count <= 0) return emptyList()
 
@@ -242,7 +236,14 @@ private fun rotateFromTierPools(
     val requestedCount = count.coerceAtMost(availableCount)
     if (requestedCount == 0) return emptyList()
 
-    val selected = mutableListOf(tier2Pool.random(random))
+    val firstTier2 = drawTeamFromTierPool(
+        tier = Tier.TIER_2,
+        pool = tier2Pool,
+        selectedIds = emptySet(),
+        reducedPoolExcludedTeamIds = reducedPoolExcludedTeamIds,
+        random = random,
+    ) ?: return emptyList()
+    val selected = mutableListOf(firstTier2)
     while (selected.size < requestedCount) {
         val selectedIds = selected.mapTo(mutableSetOf(), Team::id)
         val selectedTier2Count = selected.count { it.tier == Tier.TIER_2 }
@@ -263,10 +264,37 @@ private fun rotateFromTierPools(
         if (remainingByTier.isEmpty()) break
 
         val tier = weightedTier(remainingByTier.keys, weights, random)
-        selected += remainingByTier.getValue(tier).random(random)
+        val team = drawTeamFromTierPool(
+            tier = tier,
+            pool = remainingByTier.getValue(tier),
+            selectedIds = selectedIds,
+            reducedPoolExcludedTeamIds = reducedPoolExcludedTeamIds,
+            random = random,
+        ) ?: return emptyList()
+        selected += team
     }
 
     return selected.shuffled(random)
+}
+
+private fun drawTeamFromTierPool(
+    tier: Tier,
+    pool: List<Team>,
+    selectedIds: Set<String>,
+    reducedPoolExcludedTeamIds: Map<Tier, Set<String>>,
+    random: Random,
+): Team? {
+    val availableTeams = pool.filter { it.id !in selectedIds }
+    if (availableTeams.isEmpty()) return null
+
+    val excludedIds = reducedPoolExcludedTeamIds[tier]
+    val useReducedPool = excludedIds != null && random.nextDouble() < ReducedTierPoolProbability
+    val drawPool = if (useReducedPool) {
+        availableTeams.filterNot { it.id in excludedIds.orEmpty() }
+    } else {
+        availableTeams
+    }
+    return drawPool.randomOrNull(random)
 }
 
 private fun weightedTier(availableTiers: Set<Tier>, weights: TierWeights, random: Random): Tier {

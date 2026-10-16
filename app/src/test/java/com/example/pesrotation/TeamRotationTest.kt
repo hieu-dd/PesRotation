@@ -7,6 +7,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TeamRotationTest {
+    private class SequenceRandom(private vararg val doubleRolls: Double) : Random() {
+        var doubleRollCount = 0
+            private set
+
+        override fun nextBits(bitCount: Int): Int = 0
+
+        override fun nextDouble(): Double = doubleRolls[doubleRollCount++]
+    }
+
     private val source = (1..6).map { index ->
         val tier = if (index <= 4) Tier.TIER_1 else Tier.TIER_2
         Team(index.toString(), "Team $index", "Test", Color.Black, tier)
@@ -185,9 +194,9 @@ class TeamRotationTest {
             counts[tier] = counts.getValue(tier) + 1
         }
 
-        assertTrue(counts.getValue(Tier.TIER_1).toDouble() / sampleSize in 0.29..0.31)
+        assertTrue(counts.getValue(Tier.TIER_1).toDouble() / sampleSize in 0.24..0.26)
         assertTrue(counts.getValue(Tier.TIER_2).toDouble() / sampleSize in 0.39..0.41)
-        assertTrue(counts.getValue(Tier.TIER_3).toDouble() / sampleSize in 0.29..0.31)
+        assertTrue(counts.getValue(Tier.TIER_3).toDouble() / sampleSize in 0.34..0.36)
     }
 
     @Test
@@ -211,49 +220,73 @@ class TeamRotationTest {
     }
 
     @Test
-    fun rotateTeams_restrictsFeaturedTierTeamsOnSixtyPercentBranch() {
-        val restrictedSeed = (0..10_000).first { Random(it).nextDouble() < 0.6 }
-        val fullPoolSeed = (0..10_000).first { Random(it).nextDouble() >= 0.6 }
-        val tier1FeaturedIds = Tier1ReducedPoolExcludedTeamIds
-        val tier2FeaturedIds = Tier2ReducedPoolExcludedTeamIds
+    fun rotateTeams_appliesReducedPoolRollForEverySelectedTeam() {
         val requiredTier2 = Team("required-tier2", "Required Tier 2", "Test", Color.Black, Tier.TIER_2)
+        val scriptedRandom = SequenceRandom(0.7, 0.2, 0.7)
+        val source = listOf(
+            teams.first { it.id == "psg" },
+            teams.first { it.id == "england" },
+            requiredTier2,
+        )
 
-        val restrictedTier1Result = rotateTeams(
-            source = teams.filter { it.id in tier1FeaturedIds || it.id == "psg" } + requiredTier2,
-            count = 2,
-            random = Random(restrictedSeed),
+        val result = rotateTeams(
+            source = source,
+            count = 3,
+            random = scriptedRandom,
             weights = TierWeights(100, 0, 0),
         )
-        assertEquals(2, restrictedTier1Result.size)
-        assertEquals("psg", restrictedTier1Result.single { it.tier == Tier.TIER_1 }.id)
 
-        val fullTier1Result = rotateTeams(
-            source = teams.filter { it.id in tier1FeaturedIds } + requiredTier2,
-            count = 2,
-            random = Random(fullPoolSeed),
-            weights = TierWeights(100, 0, 0),
-        )
-        assertEquals(2, fullTier1Result.size)
-        assertTrue(fullTier1Result.single { it.tier == Tier.TIER_1 }.id in tier1FeaturedIds)
+        assertEquals(3, result.size)
+        assertEquals(setOf("psg", "england"), result.filter { it.tier == Tier.TIER_1 }.map { it.id }.toSet())
+        assertTrue(result.any { it.id == requiredTier2.id })
+        assertEquals(3, scriptedRandom.doubleRollCount)
+    }
 
-        val restrictedTier2Seed = (0..10_000).first { Random(it).nextDouble() < 0.6 }
-        val fullTier2Seed = (0..10_000).first { Random(it).nextDouble() >= 0.6 }
-        val restrictedTier2Result = rotateTeams(
-            source = teams.filter { it.id in tier2FeaturedIds },
+    @Test
+    fun rotateTeams_reducesTier2PoolOnSixtyPercentRoll() {
+        val result = rotateTeams(
+            source = teams.filter { it.id in Tier2ReducedPoolExcludedTeamIds } +
+                teams.first { it.id == "man-utd" },
             count = 1,
-            random = Random(restrictedTier2Seed),
+            random = SequenceRandom(0.2),
             weights = TierWeights(0, 100, 0),
         )
-        assertTrue(restrictedTier2Result.isEmpty())
 
-        val fullTier2Result = rotateTeams(
-            source = teams.filter { it.id in tier2FeaturedIds },
+        assertEquals("man-utd", result.single().id)
+    }
+
+    @Test
+    fun rotateTeams_reducesTier3PoolOnSixtyPercentRoll() {
+        val requiredTier2 = Team("required-tier2", "Required Tier 2", "Test", Color.Black, Tier.TIER_2)
+        val scriptedRandom = SequenceRandom(0.7, 0.2, 0.7)
+        val tier3Teams = teams.filter { it.id in Tier3ReducedPoolExcludedTeamIds } +
+            teams.first { it.id == "italy" }
+
+        val result = rotateTeams(
+            source = listOf(requiredTier2) + tier3Teams,
+            count = 3,
+            random = scriptedRandom,
+            weights = TierWeights(0, 0, 100),
+        )
+
+        assertEquals(3, result.size)
+        assertEquals(
+            setOf("italy", "tottenham"),
+            result.filter { it.tier == Tier.TIER_3 }.map { it.id }.toSet(),
+        )
+        assertEquals(3, scriptedRandom.doubleRollCount)
+    }
+
+    @Test
+    fun rotateTeams_returnsEmptyWhenReducedTier2PoolHasNoAvailableTeam() {
+        val result = rotateTeams(
+            source = teams.filter { it.id in Tier2ReducedPoolExcludedTeamIds },
             count = 1,
-            random = Random(fullTier2Seed),
+            random = SequenceRandom(0.2),
             weights = TierWeights(0, 100, 0),
         )
-        assertEquals(1, fullTier2Result.size)
-        assertTrue(fullTier2Result.single().id in tier2FeaturedIds)
+
+        assertTrue(result.isEmpty())
     }
 
     @Test
