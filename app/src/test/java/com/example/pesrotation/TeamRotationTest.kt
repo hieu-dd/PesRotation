@@ -277,8 +277,18 @@ class TeamRotationTest {
 
             assertEquals(count, result.size)
             assertTrue(result.all { it.id in VolumeUpTeamIds })
+            assertTrue(result.any { it.tier == Tier.TIER_2 })
             assertEquals(result.size, result.distinctBy(Team::id).size)
         }
+    }
+
+    @Test
+    fun rotateVolumeUpTeams_returnsEmptyWhenNoTier2TeamIsAvailable() {
+        val volumeUpPoolWithoutTier2 = teams
+            .filter { it.id in VolumeUpTeamIds }
+            .map { it.copy(tier = Tier.TIER_1) }
+
+        assertTrue(rotateVolumeUpTeams(volumeUpPoolWithoutTier2, count = 2, random = Random(1)).isEmpty())
     }
 
     @Test

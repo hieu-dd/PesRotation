@@ -240,10 +240,18 @@ fun rotateVolumeUpTeams(
     count: Int,
     random: Random = Random.Default,
     disabledTeamIds: Set<String> = emptySet(),
-): List<Team> = source
-    .filter { it.id !in disabledTeamIds && it.id in VolumeUpTeamIds }
-    .shuffled(random)
-    .take(count.coerceAtLeast(0))
+): List<Team> {
+    val pool = source.filter { it.id !in disabledTeamIds && it.id in VolumeUpTeamIds }
+    val requestedCount = count.coerceIn(0, pool.size)
+    if (requestedCount == 0) return emptyList()
+    val requiredTier2 = pool
+        .filter { it.tier == Tier.TIER_2 }
+        .shuffled(random)
+        .firstOrNull()
+        ?: return emptyList()
+    val rest = pool.filter { it.id != requiredTier2.id }.shuffled(random).take(requestedCount - 1)
+    return (listOf(requiredTier2) + rest).shuffled(random)
+}
 
 fun rotateVolumeDownTeams(
     source: List<Team>,

@@ -99,10 +99,10 @@ class MainActivity : ComponentActivity() {
     private var disabledTeamIds by mutableStateOf(emptySet<String>())
     private var tierWeights by mutableStateOf(DefaultTierWeights)
     private var rotationHistory by mutableStateOf(emptyList<RotationHistoryEntry>())
-    private var trickAccessExpiresAt by mutableStateOf(0L)
+    private var presetAccessExpiresAt by mutableStateOf(0L)
     private val tierPreferences by lazy { TeamTierPreferences(applicationContext) }
     private val historyStore by lazy { RotationHistoryStore(applicationContext) }
-    private val trickAccessStore by lazy { TrickAccessStore(applicationContext) }
+    private val presetAccessStore by lazy { PresetAccessStore(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
             historyStore.history.collect { rotationHistory = it }
         }
         lifecycleScope.launch {
-            trickAccessStore.expiresAt.collect { trickAccessExpiresAt = it }
+            presetAccessStore.expiresAt.collect { presetAccessExpiresAt = it }
         }
         setContent {
             PesRotationTheme {
@@ -132,10 +132,10 @@ class MainActivity : ComponentActivity() {
                         disabledTeamIds = disabledTeamIds,
                         tierWeights = tierWeights,
                         history = rotationHistory,
-                        trickAccessExpiresAt = trickAccessExpiresAt,
+                        presetAccessExpiresAt = presetAccessExpiresAt,
                         rotationTrick = rotationTrick,
                         onTrickConsumed = { rotationTrick = RotationTrick.NONE },
-                        onTrickAccessActivated = ::activateTrickAccess,
+                        onPresetAccessActivated = ::activatePresetAccess,
                         onRotationCompleted = ::recordRotation,
                         onOpenHistory = { currentScreen = AppScreen.HISTORY },
                         onOpenSettings = { currentScreen = AppScreen.SETTINGS },
@@ -205,13 +205,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { historyStore.clear() }
     }
 
-    private fun activateTrickAccess() {
-        trickAccessExpiresAt = trickAccessExpiry(System.currentTimeMillis())
-        lifecycleScope.launch { trickAccessStore.saveExpiry(trickAccessExpiresAt) }
+    private fun activatePresetAccess() {
+        presetAccessExpiresAt = presetAccessExpiry(System.currentTimeMillis())
+        lifecycleScope.launch { presetAccessStore.saveExpiry(presetAccessExpiresAt) }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (!isTrickAccessActive(trickAccessExpiresAt)) {
+        if (!isPresetAccessActive(presetAccessExpiresAt)) {
             rotationTrick = RotationTrick.NONE
             return super.onKeyDown(keyCode, event)
         }
@@ -225,8 +225,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        val isVolumeKey = keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
-        if (isVolumeKey && isTrickAccessActive(trickAccessExpiresAt)) return true
+        val isPresetKey = keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+        if (isPresetKey && isPresetAccessActive(presetAccessExpiresAt)) return true
         return super.onKeyUp(keyCode, event)
     }
 }
@@ -238,10 +238,10 @@ fun PesRotationScreen(
     disabledTeamIds: Set<String> = emptySet(),
     tierWeights: TierWeights = DefaultTierWeights,
     history: List<RotationHistoryEntry> = emptyList(),
-    trickAccessExpiresAt: Long = 0L,
+    presetAccessExpiresAt: Long = 0L,
     rotationTrick: RotationTrick = RotationTrick.NONE,
     onTrickConsumed: () -> Unit = {},
-    onTrickAccessActivated: () -> Unit = {},
+    onPresetAccessActivated: () -> Unit = {},
     onRotationCompleted: (List<Team>) -> Unit = {},
     onOpenHistory: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
@@ -270,7 +270,7 @@ fun PesRotationScreen(
     fun rotate() {
         if (parsedCount !in MinTeamCount..MaxTeamCount || isLoading) return
         val requestedCount = requireNotNull(parsedCount)
-        val activeTrick = rotationTrick.takeIf { isTrickAccessActive(trickAccessExpiresAt) }
+        val activeTrick = rotationTrick.takeIf { isPresetAccessActive(presetAccessExpiresAt) }
             ?: RotationTrick.NONE
         if (rotationTrick != RotationTrick.NONE && activeTrick == RotationTrick.NONE) onTrickConsumed()
         val selected = when (activeTrick) {
@@ -294,7 +294,11 @@ fun PesRotationScreen(
             )
         }
         if (selected.isEmpty()) {
-            rotationNotice = "Không còn đội đang bật trong pool này."
+            rotationNotice = if (activeTrick == RotationTrick.VOLUME_UP_POOL) {
+                "Pool Volume Up cần ít nhất một đội Tier 2 đang bật."
+            } else {
+                "Không còn đội đang bật trong pool này."
+            }
             return
         }
         rotationNotice = null
@@ -324,7 +328,7 @@ fun PesRotationScreen(
                 .padding(horizontal = 18.dp),
         ) {
             AppHeader(
-                onTrickAccessActivated = onTrickAccessActivated,
+                onPresetAccessActivated = onPresetAccessActivated,
                 onOpenHistory = onOpenHistory,
                 onOpenSettings = onOpenSettings,
                 actionsEnabled = !isLoading,
@@ -383,7 +387,7 @@ fun PesRotationScreen(
 
 @Composable
 private fun AppHeader(
-    onTrickAccessActivated: () -> Unit,
+    onPresetAccessActivated: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     actionsEnabled: Boolean,
@@ -394,7 +398,7 @@ private fun AppHeader(
             .padding(top = 18.dp, bottom = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SecretAppLogo(onTrickAccessActivated)
+        AppLogo(onPresetAccessActivated)
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -420,9 +424,9 @@ private fun AppHeader(
 }
 
 @Composable
-private fun SecretAppLogo(onTrickAccessActivated: () -> Unit) {
+private fun AppLogo(onPresetAccessActivated: () -> Unit) {
     val hapticFeedback = LocalHapticFeedback.current
-    val currentOnActivated by rememberUpdatedState(onTrickAccessActivated)
+    val currentOnActivated by rememberUpdatedState(onPresetAccessActivated)
     Box(
         modifier = Modifier
             .size(48.dp)
@@ -432,7 +436,7 @@ private fun SecretAppLogo(onTrickAccessActivated: () -> Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val up = waitForUpOrCancellation()
-                    if (up != null && up.uptimeMillis - down.uptimeMillis >= TrickLongPressMillis) {
+                    if (up != null && up.uptimeMillis - down.uptimeMillis >= PresetLongPressMillis) {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         currentOnActivated()
                     }
