@@ -96,6 +96,7 @@ private enum class AppScreen {
 class MainActivity : ComponentActivity() {
     private var rotationTrick by mutableStateOf(RotationTrick.NONE)
     private var tierOverrides by mutableStateOf(emptyMap<String, Tier>())
+    private var disabledTeamIds by mutableStateOf(emptySet<String>())
     private var tierWeights by mutableStateOf(DefaultTierWeights)
     private var rotationHistory by mutableStateOf(emptyList<RotationHistoryEntry>())
     private var trickAccessExpiresAt by mutableStateOf(0L)
@@ -113,6 +114,9 @@ class MainActivity : ComponentActivity() {
             tierPreferences.weights.collect { tierWeights = it }
         }
         lifecycleScope.launch {
+            tierPreferences.disabledTeamIds.collect { disabledTeamIds = it }
+        }
+        lifecycleScope.launch {
             historyStore.history.collect { rotationHistory = it }
         }
         lifecycleScope.launch {
@@ -125,6 +129,7 @@ class MainActivity : ComponentActivity() {
                 when (currentScreen) {
                     AppScreen.HOME -> PesRotationScreen(
                         teamPool = effectiveTeams,
+                        disabledTeamIds = disabledTeamIds,
                         tierWeights = tierWeights,
                         history = rotationHistory,
                         trickAccessExpiresAt = trickAccessExpiresAt,
@@ -145,8 +150,10 @@ class MainActivity : ComponentActivity() {
 
                     AppScreen.SETTINGS -> SettingsScreen(
                         teams = effectiveTeams,
+                        disabledTeamIds = disabledTeamIds,
                         onBack = { currentScreen = AppScreen.HOME },
                         onTierChange = ::updateTeamTier,
+                        onTeamEnabledChange = ::updateTeamEnabled,
                         weights = tierWeights,
                         onWeightsChange = ::updateTierWeights,
                         onReset = ::resetTeamTiers,
@@ -158,15 +165,21 @@ class MainActivity : ComponentActivity() {
 
     private fun updateTeamTier(teamId: String, newTier: Tier) {
         val currentTeams = applyTierOverrides(teams, tierOverrides)
-        if (!canChangeTeamTier(currentTeams, teamId, newTier)) return
+        if (!canChangeTeamTier(currentTeams, teamId, newTier, disabledTeamIds)) return
 
         val defaultTier = teams.find { it.id == teamId }?.tier
         tierOverrides = if (newTier == defaultTier) tierOverrides - teamId else tierOverrides + (teamId to newTier)
         lifecycleScope.launch { tierPreferences.setTier(teamId, newTier) }
     }
 
+    private fun updateTeamEnabled(teamId: String, enabled: Boolean) {
+        disabledTeamIds = if (enabled) disabledTeamIds - teamId else disabledTeamIds + teamId
+        lifecycleScope.launch { tierPreferences.setTeamEnabled(teamId, enabled) }
+    }
+
     private fun resetTeamTiers() {
         tierOverrides = emptyMap()
+        disabledTeamIds = emptySet()
         tierWeights = DefaultTierWeights
         lifecycleScope.launch { tierPreferences.reset() }
     }
@@ -222,6 +235,7 @@ class MainActivity : ComponentActivity() {
 fun PesRotationScreen(
     modifier: Modifier = Modifier,
     teamPool: List<Team> = teams,
+    disabledTeamIds: Set<String> = emptySet(),
     tierWeights: TierWeights = DefaultTierWeights,
     history: List<RotationHistoryEntry> = emptyList(),
     trickAccessExpiresAt: Long = 0L,
@@ -235,6 +249,7 @@ fun PesRotationScreen(
     var teamCount by rememberSaveable { mutableStateOf("3") }
     var pendingTeamIds by rememberSaveable { mutableStateOf("") }
     var isLoading by rememberSaveable { mutableStateOf(false) }
+    var rotationNotice by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedTeams = history.firstOrNull()?.resolveTeams(teamPool).orEmpty()
     val previousTeams = history.getOrNull(1)?.resolveTeams(teamPool).orEmpty()
     val parsedCount = teamCount.toIntOrNull()
@@ -259,10 +274,30 @@ fun PesRotationScreen(
             ?: RotationTrick.NONE
         if (rotationTrick != RotationTrick.NONE && activeTrick == RotationTrick.NONE) onTrickConsumed()
         val selected = when (activeTrick) {
-            RotationTrick.VOLUME_UP_POOL -> rotateVolumeUpTeams(teamPool, requestedCount)
-            RotationTrick.VOLUME_DOWN_POOL -> rotateVolumeDownTeams(teamPool, requestedCount)
-            RotationTrick.NONE -> rotateTeams(teamPool, requestedCount, weights = tierWeights)
+            RotationTrick.VOLUME_UP_POOL -> rotateVolumeUpTeams(
+                teamPool,
+                requestedCount,
+                disabledTeamIds = disabledTeamIds,
+            )
+
+            RotationTrick.VOLUME_DOWN_POOL -> rotateVolumeDownTeams(
+                teamPool,
+                requestedCount,
+                disabledTeamIds = disabledTeamIds,
+            )
+
+            RotationTrick.NONE -> rotateTeams(
+                teamPool,
+                requestedCount,
+                weights = tierWeights,
+                disabledTeamIds = disabledTeamIds,
+            )
         }
+        if (selected.isEmpty()) {
+            rotationNotice = "Không còn đội đang bật trong pool này."
+            return
+        }
+        rotationNotice = null
         if (activeTrick != RotationTrick.NONE && selected.size == requestedCount) onTrickConsumed()
         pendingTeamIds = selected.joinToString(",") { it.id }
         isLoading = true
@@ -298,6 +333,7 @@ fun PesRotationScreen(
                 teamCount = teamCount,
                 hasError = hasError,
                 isLoading = isLoading,
+                message = rotationNotice,
                 onTeamCountChange = { value ->
                     if (value.length <= 1 && value.all(Char::isDigit)) teamCount = value
                 },
@@ -433,6 +469,7 @@ private fun DrawControl(
     teamCount: String,
     hasError: Boolean,
     isLoading: Boolean,
+    message: String?,
     onTeamCountChange: (String) -> Unit,
     onRotate: () -> Unit,
     canRotate: Boolean,
@@ -492,6 +529,14 @@ private fun DrawControl(
                 } else {
                     Text("ROTATE TEAMS", style = MaterialTheme.typography.labelLarge)
                 }
+            }
+            if (message != null) {
+                Text(
+                    text = message,
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = BroadcastDanger,
+                    fontSize = 12.sp,
+                )
             }
         }
     }
