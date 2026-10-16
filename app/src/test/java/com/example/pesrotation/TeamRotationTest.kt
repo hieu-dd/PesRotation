@@ -46,6 +46,14 @@ class TeamRotationTest {
     }
 
     @Test
+    fun roster_usesUpdatedDefaultTierAssignments() {
+        assertEquals(Tier.TIER_3, teams.first { it.id == "dortmund" }.tier)
+        assertEquals(Tier.TIER_3, teams.first { it.id == "napoli" }.tier)
+        assertEquals(Tier.TIER_2, teams.first { it.id == "man-utd" }.tier)
+        assertEquals(Tier.TIER_2, teams.first { it.id == "germany" }.tier)
+    }
+
+    @Test
     fun applyTierOverrides_changesOnlyConfiguredTeams() {
         val result = applyTierOverrides(
             source = teams,
@@ -167,6 +175,23 @@ class TeamRotationTest {
 
     @Test
     fun rotateVolumeUpTeams_usesOnlyConfiguredTeams() {
+        assertEquals(
+            setOf(
+                "england",
+                "arsenal",
+                "france",
+                "real-madrid",
+                "spain",
+                "brazil",
+                "portugal",
+                "inter-milan",
+                "man-utd",
+                "germany",
+                "tottenham",
+            ),
+            VolumeUpTeamIds,
+        )
+
         (1..4).forEach { count ->
             val result = rotateVolumeUpTeams(teams, count, Random(count))
 
@@ -177,23 +202,47 @@ class TeamRotationTest {
     }
 
     @Test
-    fun rotateVolumeDownTeams_usesCurrentPrimaryTiersAndExclusions() {
+    fun rotateVolumeDownTeams_usesConfiguredTierRules() {
+        val expectedEligibleTeamIds = setOf(
+            "bayern-munich",
+            "man-city",
+            "barcelona",
+            "real-madrid",
+            "arsenal",
+            "france",
+            "england",
+            "spain",
+            "chelsea",
+            "atletico-madrid",
+            "inter-milan",
+            "brazil",
+            "portugal",
+            "man-utd",
+            "germany",
+            "tottenham",
+            "netherlands",
+            "italy",
+        )
+        assertEquals(expectedEligibleTeamIds, teams.filter(::isVolumeDownEligible).map(Team::id).toSet())
+
         val result = rotateVolumeDownTeams(teams, count = 4, random = Random(1))
 
         assertEquals(4, result.size)
         assertTrue(result.all(::isVolumeDownEligible))
-        assertTrue(result.none { it.id in VolumeDownExcludedTeamIds })
+        assertTrue(result.all { it.id in expectedEligibleTeamIds })
         assertEquals(result.size, result.distinctBy(Team::id).size)
     }
 
     @Test
     fun canChangeTeamTier_keepsAtLeastFourVolumeDownTeams() {
         val constrainedSource = listOf(
+            Team("psg", "PSG", "Test", Color.Black, Tier.TIER_1),
+            Team("liverpool", "Liverpool", "Test", Color.Black, Tier.TIER_1),
             Team("a", "A", "Test", Color.Black, Tier.TIER_1),
             Team("b", "B", "Test", Color.Black, Tier.TIER_1),
             Team("c", "C", "Test", Color.Black, Tier.TIER_2),
             Team("d", "D", "Test", Color.Black, Tier.TIER_2),
-            Team("dortmund", "Dortmund", "Test", Color.Black, Tier.TIER_1),
+            Team("dortmund", "Dortmund", "Test", Color.Black, Tier.TIER_2),
             Team("ac-milan", "AC Milan", "Test", Color.Black, Tier.TIER_2),
         )
 

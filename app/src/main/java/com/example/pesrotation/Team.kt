@@ -41,16 +41,20 @@ enum class RotationTrick {
 val VolumeUpTeamIds = setOf(
     "england",
     "arsenal",
-    "bayern-munich",
     "france",
     "real-madrid",
+    "spain",
     "brazil",
     "portugal",
+    "inter-milan",
     "man-utd",
     "germany",
+    "tottenham",
 )
 
-val VolumeDownExcludedTeamIds = setOf("dortmund", "ac-milan")
+val VolumeDownTier1ExcludedTeamIds = setOf("liverpool", "psg")
+val VolumeDownTier2ExcludedTeamIds = setOf("juventus", "ac-milan", "argentina", "dortmund")
+val VolumeDownTier3IncludedTeamIds = setOf("netherlands", "tottenham", "italy")
 
 data class Team(
     val id: String,
@@ -64,18 +68,18 @@ data class Team(
 val teams = listOf(
     Team("psg", "PSG", "CLB", Color(0xFF004170), Tier.TIER_1, R.drawable.team_psg),
     Team("liverpool", "Liverpool", "CLB", Color(0xFFC8102E), Tier.TIER_1, R.drawable.team_liverpool),
-    Team("dortmund", "Dortmund", "CLB", Color(0xFFFDE100), Tier.TIER_2, R.drawable.team_dortmund),
+    Team("dortmund", "Dortmund", "CLB", Color(0xFFFDE100), Tier.TIER_3, R.drawable.team_dortmund),
     Team("benfica", "Benfica", "CLB", Color(0xFFE30613), Tier.TIER_3, R.drawable.team_benfica),
     Team("bayern-munich", "Bayern Munich", "CLB", Color(0xFF0066B2), Tier.TIER_1, R.drawable.team_bayern_munich),
     Team("man-city", "Man City", "CLB", Color(0xFF6CABDD), Tier.TIER_1, R.drawable.team_man_city),
-    Team("man-utd", "Man Utd", "CLB", Color(0xFFDA291C), Tier.TIER_3, R.drawable.team_man_utd),
+    Team("man-utd", "Man Utd", "CLB", Color(0xFFDA291C), Tier.TIER_2, R.drawable.team_man_utd),
     Team("tottenham", "Tottenham", "CLB", Color(0xFF132257), Tier.TIER_3, R.drawable.team_tottenham),
     Team("ac-milan", "AC Milan", "CLB", Color(0xFFB21E29), Tier.TIER_2, R.drawable.team_ac_milan),
     Team("as-roma", "AS Roma", "CLB", Color(0xFF8E1F2F), Tier.TIER_3, R.drawable.team_as_roma),
     Team("chelsea", "Chelsea", "CLB", Color(0xFF034694), Tier.TIER_2, R.drawable.team_chelsea),
     Team("juventus", "Juventus", "CLB", Color(0xFF202020), Tier.TIER_2, R.drawable.team_juventus),
     Team("atletico-madrid", "Atletico Madrid", "CLB", Color(0xFFCB3524), Tier.TIER_2, R.drawable.team_atletico_madrid),
-    Team("napoli", "Napoli", "CLB", Color(0xFF12A0D7), Tier.TIER_2, R.drawable.team_napoli),
+    Team("napoli", "Napoli", "CLB", Color(0xFF12A0D7), Tier.TIER_3, R.drawable.team_napoli),
     Team("barcelona", "Barcelona", "CLB", Color(0xFF9B1D36), Tier.TIER_1, R.drawable.team_barcelona),
     Team("porto", "Porto", "CLB", Color(0xFF0046AD), Tier.TIER_3, R.drawable.team_porto),
     Team("real-madrid", "Real Madrid", "CLB", Color(0xFF315A9B), Tier.TIER_1, R.drawable.team_real_madrid),
@@ -84,7 +88,7 @@ val teams = listOf(
     Team("argentina", "Argentina", "Đội tuyển", Color(0xFF75AADB), Tier.TIER_2, R.drawable.team_argentina),
     Team("brazil", "Brazil", "Đội tuyển", Color(0xFF009C3B), Tier.TIER_2, R.drawable.team_brazil),
     Team("netherlands", "Hà Lan", "Đội tuyển", Color(0xFFF36C21), Tier.TIER_3, R.drawable.team_netherlands),
-    Team("germany", "Đức", "Đội tuyển", Color(0xFF242424), Tier.TIER_3, R.drawable.team_germany),
+    Team("germany", "Đức", "Đội tuyển", Color(0xFF242424), Tier.TIER_2, R.drawable.team_germany),
     Team("france", "Pháp", "Đội tuyển", Color(0xFF1A2F74), Tier.TIER_1, R.drawable.team_france),
     Team("england", "Anh", "Đội tuyển", Color(0xFFCE1124), Tier.TIER_1, R.drawable.team_england),
     Team("belgium", "Bỉ", "Đội tuyển", Color(0xFFEF3340), Tier.TIER_3, R.drawable.team_belgium),
@@ -111,8 +115,11 @@ fun canChangeTeamTier(source: List<Team>, teamId: String, newTier: Tier): Boolea
     return hasEnoughPrimaryTeams && updatedTeams.count(::isVolumeDownEligible) >= MinVolumeDownPoolSize
 }
 
-fun isVolumeDownEligible(team: Team): Boolean =
-    team.id !in VolumeDownExcludedTeamIds && team.tier != Tier.TIER_3
+fun isVolumeDownEligible(team: Team): Boolean = when (team.tier) {
+    Tier.TIER_1 -> team.id !in VolumeDownTier1ExcludedTeamIds
+    Tier.TIER_2 -> team.id !in VolumeDownTier2ExcludedTeamIds
+    Tier.TIER_3 -> team.id in VolumeDownTier3IncludedTeamIds
+}
 
 fun rotateTeams(
     source: List<Team>,
