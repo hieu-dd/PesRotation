@@ -8,6 +8,7 @@ private const val MaxTier3Teams = 2
 private const val MinRequiredTeamsPerPrimaryTier = 2
 private const val MinVolumeDownPoolSize = 4
 private const val MaxSelectionAttempts = 1_000
+private const val ReducedTierPoolProbability = 0.6
 
 data class TierWeights(
     val tier1: Int,
@@ -62,6 +63,8 @@ val VolumeDownTier2ExcludedTeamIds = setOf(
     "aston-villa",
 )
 val VolumeDownTier3IncludedTeamIds = setOf("netherlands", "tottenham", "italy")
+val Tier1ReducedPoolExcludedTeamIds = setOf("england", "france", "arsenal", "real-madrid")
+val Tier2ReducedPoolExcludedTeamIds = setOf("germany", "brazil")
 
 data class Team(
     val id: String,
@@ -138,13 +141,31 @@ fun rotateTeams(
     random: Random = Random.Default,
     weights: TierWeights = DefaultTierWeights,
 ): List<Team> {
-    val teamsByTier = Tier.entries.associateWith { tier -> source.filter { it.tier == tier } }
-    val tier3Slots = source.count { it.tier == Tier.TIER_3 }.coerceAtMost(MaxTier3Teams)
-    val availableCount = source.count { it.tier != Tier.TIER_3 } + tier3Slots
+    if (count <= 0) return emptyList()
+
+    val teamsByTier = Tier.entries.associateWith { tier ->
+        val tierTeams = source.filter { it.tier == tier }
+        val excludedTeamIds = when (tier) {
+            Tier.TIER_1 -> Tier1ReducedPoolExcludedTeamIds
+            Tier.TIER_2 -> Tier2ReducedPoolExcludedTeamIds
+            Tier.TIER_3 -> emptySet()
+        }
+        if (
+            tierTeams.isNotEmpty() && excludedTeamIds.isNotEmpty() &&
+            random.nextDouble() < ReducedTierPoolProbability
+        ) {
+            tierTeams.filterNot { it.id in excludedTeamIds }
+        } else {
+            tierTeams
+        }
+    }
+    val tier3Slots = teamsByTier.getValue(Tier.TIER_3).size.coerceAtMost(MaxTier3Teams)
+    val availableCount = teamsByTier.getValue(Tier.TIER_1).size +
+        teamsByTier.getValue(Tier.TIER_2).size + tier3Slots
     val requestedCount = count.coerceIn(0, availableCount)
     if (requestedCount == 0) return emptyList()
     if (teamsByTier.values.count { it.isNotEmpty() } == 1) {
-        return source.shuffled(random).take(requestedCount)
+        return teamsByTier.values.flatten().shuffled(random).take(requestedCount)
     }
 
     repeat(MaxSelectionAttempts) {
@@ -164,7 +185,7 @@ fun rotateTeams(
         }
     }
 
-    return fallbackRotation(source, requestedCount, random)
+    return fallbackRotation(teamsByTier, requestedCount, random)
 }
 
 fun randomTier(
@@ -180,10 +201,13 @@ fun randomTier(
     }
 }
 
-private fun fallbackRotation(source: List<Team>, requestedCount: Int, random: Random): List<Team> {
+private fun fallbackRotation(
+    teamsByTier: Map<Tier, List<Team>>,
+    requestedCount: Int,
+    random: Random,
+): List<Team> {
     val selected = mutableListOf<Team>()
-    source
-        .filter { it.tier == Tier.TIER_2 }
+    teamsByTier.getValue(Tier.TIER_2)
         .shuffled(random)
         .firstOrNull()
         ?.let(selected::add)
@@ -191,7 +215,7 @@ private fun fallbackRotation(source: List<Team>, requestedCount: Int, random: Ra
 
     var tier3Count = 0
 
-    for (team in source.shuffled(random)) {
+    for (team in teamsByTier.values.flatten().shuffled(random)) {
         if (team in selected) continue
         if (team.tier == Tier.TIER_3 && tier3Count == MaxTier3Teams) continue
         selected += team
